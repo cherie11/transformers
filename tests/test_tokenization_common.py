@@ -25,12 +25,9 @@ from tests.utils import require_tf, require_torch
 
 
 def merge_model_tokenizer_mappings(
-    model_mapping: Dict["PretrainedConfig", Union["PreTrainedModel", "TFPreTrainedModel"]],
-    tokenizer_mapping: Dict["PretrainedConfig", Tuple["PreTrainedTokenizer", "PreTrainedTokenizerFast"]],
-) -> Dict[
-    Union["PreTrainedTokenizer", "PreTrainedTokenizerFast"],
-    Tuple["PretrainedConfig", Union["PreTrainedModel", "TFPreTrainedModel"]],
-]:
+    model_mapping: "Dict[PretrainedConfig, Union[PreTrainedModel, TFPreTrainedModel]]",  # noqa: F821
+    tokenizer_mapping: "Dict[PretrainedConfig, Tuple[PreTrainedTokenizer, PreTrainedTokenizerFast]]",  # noqa: F821
+) -> "Dict[Union[PreTrainedTokenizer, PreTrainedTokenizerFast], Tuple[PretrainedConfig, Union[PreTrainedModel, TFPreTrainedModel]]]":  # noqa: F821
     configurations = list(model_mapping.keys())
     model_tokenizer_mapping = OrderedDict([])
 

@@ -362,7 +362,7 @@ class _TransfoXLDelimiterLookupTokenizer(BaseTokenizer):
     ):
 
         try:
-            tokenizer = WordLevel(vocab_file, unk_token=unk_token)
+            tokenizer = WordLevel.from_files(vocab_file, unk_token=unk_token)
             tokenizer = Tokenizer(tokenizer)
         except Exception:
             raise ValueError(
