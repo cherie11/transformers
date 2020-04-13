@@ -203,6 +203,7 @@ if is_torch_available():
         GPT2Model,
         GPT2LMHeadModel,
         GPT2DoubleHeadsModel,
+        GPT2DoubleHeadsModel_multitask,
         load_tf_weights_in_gpt2,
         GPT2_PRETRAINED_MODEL_ARCHIVE_MAP,
     )

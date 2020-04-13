@@ -407,6 +407,7 @@ class GPT2Model(GPT2PreTrainedModel):
             batch_size = input_ids.shape[0]
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.size()[:-1]
+            inputs_embeds = inputs_embeds.view(-1, input_shape[-1],inputs_embeds.shape[-1])
             batch_size = inputs_embeds.shape[0]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
@@ -640,7 +641,163 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
         self.cluster_embed = self.load_custer_embeddings()
         self.init_weights()
     def load_custer_embeddings(self):
-        weight = np.load('/home/xueweiwa/comet/cluster_embed.npy')
+        weight = np.load('/home/xw_wangcs/cluster_embed_gpt2.npy')
+        weight = torch.from_numpy(weight)
+        return  nn.Embedding.from_pretrained(weight)
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    @add_start_docstrings_to_callable(GPT2_INPUTS_DOCSTRING)
+    def forward(
+        self,
+        input_ids=None,
+        past=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        mc_token_ids=None,
+        lm_labels=None,
+        mc_labels=None,
+        clusters=None,
+        cl_token_ids=None,
+        multitask= False
+        
+    ):
+        r"""
+        mc_token_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, num_choices)`, `optional`, default to index of the last token of the input)
+            Index of the classification token in each input sequence.
+            Selected in the range ``[0, input_ids.size(-1) - 1[``.
+        lm_labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`, defaults to :obj:`None`)
+            Labels for language modeling.
+            Note that the labels **are shifted** inside the model, i.e. you can set ``lm_labels = input_ids``
+            Indices are selected in ``[-1, 0, ..., config.vocab_size]``
+            All labels set to ``-100`` are ignored (masked), the loss is only
+            computed for labels in ``[0, ..., config.vocab_size]``
+        mc_labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size)`, `optional`, defaults to :obj:`None`)
+            Labels for computing the multiple choice classification loss.
+            Indices should be in ``[0, ..., num_choices]`` where `num_choices` is the size of the second dimension
+            of the input tensors. (see `input_ids` above)
+
+    Return:
+        :obj:`tuple(torch.FloatTensor)` comprising various elements depending on the configuration (:class:`~transformers.GPT2Config`) and inputs:
+        lm_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when ``lm_labels`` is provided):
+            Language modeling loss.
+        mc_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`multiple_choice_labels` is provided):
+            Multiple choice classification loss.
+        lm_prediction_scores (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        mc_prediction_scores (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices)`):
+            Prediction scores of the multiple choice classification head (scores for each choice before SoftMax).
+        past (:obj:`List[torch.FloatTensor]` of length :obj:`config.n_layers` with each tensor of shape :obj:`(2, batch_size, num_heads, sequence_length, embed_size_per_head)`):
+            Contains pre-computed hidden-states (key and values in the attention blocks).
+            Can be used (see `past` input) to speed up sequential decoding. The token ids which have their past given to this model
+            should not be passed as input ids as they have already been computed.
+        hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_hidden_states=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
+            of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape
+            :obj:`(batch_size, num_heads, sequence_length, sequence_length)`.
+
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
+            heads.
+
+    Examples::
+
+        import torch
+        from transformers import GPT2Tokenizer, GPT2DoubleHeadsModel
+
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        model = GPT2DoubleHeadsModel.from_pretrained('gpt2')
+
+        # Add a [CLS] to the vocabulary (we should train it also!)
+        tokenizer.add_special_tokens({'cls_token': '[CLS]'})
+        model.resize_token_embeddings(len(tokenizer))  # Update the model embeddings with the new vocabulary size
+        print(tokenizer.cls_token_id, len(tokenizer))  # The newly token the last token of the vocabulary
+
+        choices = ["Hello, my dog is cute [CLS]", "Hello, my cat is cute [CLS]"]
+        encoded_choices = [tokenizer.encode(s) for s in choices]
+        cls_token_location = [tokens.index(tokenizer.cls_token_id) for tokens in encoded_choices]
+
+        input_ids = torch.tensor(encoded_choices).unsqueeze(0)  # Batch size: 1, number of choices: 2
+        mc_token_ids = torch.tensor([cls_token_location])  # Batch size: 1
+
+        outputs = model(input_ids, mc_token_ids=mc_token_ids)
+        lm_prediction_scores, mc_prediction_scores = outputs[:2]
+
+        """
+        input_shape = input_ids.size()
+        input_ids = input_ids.view(-1, input_shape[-1])
+        clusters = clusters.view(-1)
+        cl_token_ids = cl_token_ids.view(-1)
+        cluster_embed = self.cluster_embed(clusters)
+        inputs_embeds = self.transformer.wte(input_ids)
+#         print(inputs_embeds.size(),cl_token_ids.size(),cluster_embed.size())
+        inputs_embeds[:,cl_token_ids,:] = cluster_embed.float()
+        inputs_embeds_shape = inputs_embeds.size()
+#         print(inputs_embeds.size())
+#         input()
+        inputs_embeds = inputs_embeds.view(input_shape+tuple([-1]))
+        transformer_outputs = self.transformer(
+#             input_ids=input_ids,
+            past=past,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+        )
+
+        hidden_states = transformer_outputs[0]
+        
+        lm_logits = self.lm_head(hidden_states)
+        mc_logits = self.multiple_choice_head(hidden_states, mc_token_ids).squeeze(-1)
+        if multitask is True :
+            cluster_logits = self.cluster_classify_head(hidden_states, mc_token_ids ).squeeze(-1)
+
+            outputs = (lm_logits, mc_logits,cluster_logits) + transformer_outputs[1:]
+        else:
+            outputs = (lm_logits, mc_logits) + transformer_outputs[1:]
+            
+            
+        if mc_labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(mc_logits.view(-1, mc_logits.size(-1)), mc_labels.view(-1))
+            outputs = (loss,) + outputs
+        if lm_labels is not None:
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = lm_labels[..., 1:].contiguous()
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            outputs = (loss,) + outputs
+        if multitask is True and clusters is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(cluster_logits.view(-1,cluster_logits.size(-1)), clusters.view(-1))
+            outputs = (loss,) + outputs
+        
+        return outputs  # (lm loss), (mc loss), (cluster loss) lm logits, mc logits, cluster logits, presents, (all hidden_states), (attentions)
+
+    
+class GPT2DoubleHeadsModel_multitask(GPT2PreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        config.num_labels = 1
+        self.transformer = GPT2Model(config)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.multiple_choice_head = SequenceSummary(config)
+
+        config_cluster = copy.deepcopy(config)
+        config_cluster.num_labels = 25
+        self.cluster_classify_head = SequenceSummary(config_cluster)
+        self.cluster_embed = self.load_custer_embeddings()
+        self.init_weights()
+    def load_custer_embeddings(self):
+        weight = np.load('/home/xw_wangcs/cluster_embed.npy')
         weight = torch.from_numpy(weight)
         return  nn.Embedding.from_pretrained(weight)
 
@@ -763,125 +920,3 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
             outputs = (loss,) + outputs
         
         return outputs  # (lm loss), (mc loss), (cluster loss) lm logits, mc logits, cluster logits, presents, (all hidden_states), (attentions)
-
-    
-class GPT2DoubleHeadsModel_cluster(GPT2PreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        config.num_labels = 1
-        self.transformer = GPT2Model(config)
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        self.multiple_choice_head = SequenceSummary(config)
-        self.num_cluster = 25
-        self.init_weights()
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    @add_start_docstrings_to_callable(GPT2_INPUTS_DOCSTRING)
-    def forward(
-        self,
-        input_ids=None,
-        past=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        mc_token_ids=None,
-        lm_labels=None,
-        mc_labels=None,
-    ):
-        r"""
-        mc_token_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, num_choices)`, `optional`, default to index of the last token of the input)
-            Index of the classification token in each input sequence.
-            Selected in the range ``[0, input_ids.size(-1) - 1[``.
-        lm_labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`, defaults to :obj:`None`)
-            Labels for language modeling.
-            Note that the labels **are shifted** inside the model, i.e. you can set ``lm_labels = input_ids``
-            Indices are selected in ``[-1, 0, ..., config.vocab_size]``
-            All labels set to ``-100`` are ignored (masked), the loss is only
-            computed for labels in ``[0, ..., config.vocab_size]``
-        mc_labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size)`, `optional`, defaults to :obj:`None`)
-            Labels for computing the multiple choice classification loss.
-            Indices should be in ``[0, ..., num_choices]`` where `num_choices` is the size of the second dimension
-            of the input tensors. (see `input_ids` above)
-
-    Return:
-        :obj:`tuple(torch.FloatTensor)` comprising various elements depending on the configuration (:class:`~transformers.GPT2Config`) and inputs:
-        lm_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when ``lm_labels`` is provided):
-            Language modeling loss.
-        mc_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`multiple_choice_labels` is provided):
-            Multiple choice classification loss.
-        lm_prediction_scores (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices, sequence_length, config.vocab_size)`):
-            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
-        mc_prediction_scores (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices)`):
-            Prediction scores of the multiple choice classification head (scores for each choice before SoftMax).
-        past (:obj:`List[torch.FloatTensor]` of length :obj:`config.n_layers` with each tensor of shape :obj:`(2, batch_size, num_heads, sequence_length, embed_size_per_head)`):
-            Contains pre-computed hidden-states (key and values in the attention blocks).
-            Can be used (see `past` input) to speed up sequential decoding. The token ids which have their past given to this model
-            should not be passed as input ids as they have already been computed.
-        hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_hidden_states=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
-            of shape :obj:`(batch_size, sequence_length, hidden_size)`.
-
-            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-        attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_attentions=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape
-            :obj:`(batch_size, num_heads, sequence_length, sequence_length)`.
-
-            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
-            heads.
-
-    Examples::
-
-        import torch
-        from transformers import GPT2Tokenizer, GPT2DoubleHeadsModel
-
-        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        model = GPT2DoubleHeadsModel.from_pretrained('gpt2')
-
-        # Add a [CLS] to the vocabulary (we should train it also!)
-        tokenizer.add_special_tokens({'cls_token': '[CLS]'})
-        model.resize_token_embeddings(len(tokenizer))  # Update the model embeddings with the new vocabulary size
-        print(tokenizer.cls_token_id, len(tokenizer))  # The newly token the last token of the vocabulary
-
-        choices = ["Hello, my dog is cute [CLS]", "Hello, my cat is cute [CLS]"]
-        encoded_choices = [tokenizer.encode(s) for s in choices]
-        cls_token_location = [tokens.index(tokenizer.cls_token_id) for tokens in encoded_choices]
-
-        input_ids = torch.tensor(encoded_choices).unsqueeze(0)  # Batch size: 1, number of choices: 2
-        mc_token_ids = torch.tensor([cls_token_location])  # Batch size: 1
-
-        outputs = model(input_ids, mc_token_ids=mc_token_ids)
-        lm_prediction_scores, mc_prediction_scores = outputs[:2]
-
-        """
-        transformer_outputs = self.transformer(
-            input_ids,
-            past=past,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-        )
-
-        hidden_states = transformer_outputs[0]
-
-        lm_logits = self.lm_head(hidden_states)
-        mc_logits = self.multiple_choice_head(hidden_states, mc_token_ids).squeeze(-1)
-
-        outputs = (lm_logits, mc_logits) + transformer_outputs[1:]
-        if mc_labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(mc_logits.view(-1, mc_logits.size(-1)), mc_labels.view(-1))
-            outputs = (loss,) + outputs
-        if lm_labels is not None:
-            shift_logits = lm_logits[..., :-1, :].contiguous()
-            shift_labels = lm_labels[..., 1:].contiguous()
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            outputs = (loss,) + outputs
-
-        return outputs  # (lm loss), (mc loss), lm logits, mc logits, presents, (all hidden_states), (attentions)
