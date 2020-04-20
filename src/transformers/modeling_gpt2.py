@@ -524,8 +524,12 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         super().__init__(config)
         self.transformer = GPT2Model(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-
+        self.cluster_embed = self.load_custer_embeddings()
         self.init_weights()
+    def load_custer_embeddings(self):
+        weight = np.load('/home/xw_wangcs/cluster_embed_gpt2.npy')
+        weight = torch.from_numpy(weight)
+        return  nn.Embedding.from_pretrained(weight)
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -548,6 +552,9 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         head_mask=None,
         inputs_embeds=None,
         labels=None,
+        clusters=None,
+        cl_token_ids=None,
+        with_cluster=False
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`, defaults to :obj:`None`):
@@ -592,8 +599,20 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         loss, logits = outputs[:2]
 
         """
+        input_shape = input_ids.size()
+        input_ids = input_ids.view(-1, input_shape[-1])
+        if with_cluster:
+            clusters = clusters.view(-1)
+            cl_token_ids = cl_token_ids.view(-1)
+            cluster_embed = self.cluster_embed(clusters)
+        inputs_embeds = self.transformer.wte(input_ids)
+        if with_cluster:
+            inputs_embeds[:,cl_token_ids,:] = cluster_embed.float()
+        inputs_embeds_shape = inputs_embeds.size()
+        inputs_embeds = inputs_embeds.view(input_shape+tuple([-1]))
+        
         transformer_outputs = self.transformer(
-            input_ids,
+#             input_ids,
             past=past,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -663,7 +682,8 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
         mc_labels=None,
         clusters=None,
         cl_token_ids=None,
-        multitask= False
+        multitask= False,
+        with_cluster=False
         
     ):
         r"""
@@ -733,15 +753,14 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
         """
         input_shape = input_ids.size()
         input_ids = input_ids.view(-1, input_shape[-1])
-        clusters = clusters.view(-1)
-        cl_token_ids = cl_token_ids.view(-1)
-        cluster_embed = self.cluster_embed(clusters)
+        if with_cluster:
+            clusters = clusters.view(-1)
+            cl_token_ids = cl_token_ids.view(-1)
+            cluster_embed = self.cluster_embed(clusters)
         inputs_embeds = self.transformer.wte(input_ids)
-#         print(inputs_embeds.size(),cl_token_ids.size(),cluster_embed.size())
-        inputs_embeds[:,cl_token_ids,:] = cluster_embed.float()
+        if with_cluster:
+            inputs_embeds[:,cl_token_ids,:] = cluster_embed.float()
         inputs_embeds_shape = inputs_embeds.size()
-#         print(inputs_embeds.size())
-#         input()
         inputs_embeds = inputs_embeds.view(input_shape+tuple([-1]))
         transformer_outputs = self.transformer(
 #             input_ids=input_ids,
