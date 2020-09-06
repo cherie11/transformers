@@ -527,7 +527,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         self.cluster_embed = self.load_custer_embeddings()
         self.init_weights()
     def load_custer_embeddings(self):
-        weight = np.load('/home/xw_wangcs/cluster_embed_gpt2.npy')
+        weight = np.load('/home/xueweiwa/comet/cluster_embed_gpt2_25.npy')
         weight = torch.from_numpy(weight)
         return  nn.Embedding.from_pretrained(weight)
 
@@ -660,7 +660,7 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
         self.cluster_embed = self.load_custer_embeddings()
         self.init_weights()
     def load_custer_embeddings(self):
-        weight = np.load('/home/xw_wangcs/cluster_embed_gpt2.npy')
+        weight = np.load('/home/xueweiwa/comet/cluster_embed_gpt2_25.npy')
         weight = torch.from_numpy(weight)
         return  nn.Embedding.from_pretrained(weight)
 
@@ -816,7 +816,7 @@ class GPT2DoubleHeadsModel_multitask(GPT2PreTrainedModel):
         self.cluster_embed = self.load_custer_embeddings()
         self.init_weights()
     def load_custer_embeddings(self):
-        weight = np.load('/home/xw_wangcs/cluster_embed.npy')
+        weight = np.load('/home/xueweiwa/comet/cluster_embed_gpt2_25.npy')
         weight = torch.from_numpy(weight)
         return  nn.Embedding.from_pretrained(weight)
 
